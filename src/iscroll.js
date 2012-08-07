@@ -360,7 +360,7 @@ iScroll.prototype = {
 	
 	_start: function (e) {
 		var that = this,
-			point = hasTouch ? e.touches[0] : e,
+			point = hasTouch ? e.changedTouches[0] : e,
 			matrix, x, y,
 			c1, c2;
 
@@ -369,6 +369,30 @@ iScroll.prototype = {
 		if (that.options.onBeforeScrollStart) that.options.onBeforeScrollStart.call(that, e);
 
 		if (that.options.useTransition || that.options.zoom) that._transitionTime(0);
+
+		// Gesture start
+
+		if (that.options.zoom && hasTouch && that.touchIndex) {
+            if(that.otherTouchIndex) return;
+
+            that.otherTouchIndex = point.identifier;
+
+            var point2 = this._find_touch(e.touches, that.touchIndex);
+			c1 = m.abs(point.pageX-point2.pageX);
+			c2 = m.abs(point.pageY-point2.pageY);
+			that.touchesDistStart = m.sqrt(c1 * c1 + c2 * c2);
+
+			that.originX = m.abs(point.pageX + point2.pageX - that.wrapperOffsetLeft * 2) / 2 - that.x;
+			that.originY = m.abs(point.pageY + point2.pageY - that.wrapperOffsetTop * 2) / 2 - that.y;
+
+			if (that.options.onZoomStart) that.options.onZoomStart.call(that, e);
+		}
+        else
+        {
+            if (that.touchIndex) return;
+
+            that.touchIndex = hasTouch ? point.identifier : null;
+        }
 
 		that.moved = false;
 		that.animating = false;
@@ -379,18 +403,6 @@ iScroll.prototype = {
 		that.absDistY = 0;
 		that.dirX = 0;
 		that.dirY = 0;
-
-		// Gesture start
-		if (that.options.zoom && hasTouch && e.touches.length > 1) {
-			c1 = m.abs(e.touches[0].pageX-e.touches[1].pageX);
-			c2 = m.abs(e.touches[0].pageY-e.touches[1].pageY);
-			that.touchesDistStart = m.sqrt(c1 * c1 + c2 * c2);
-
-			that.originX = m.abs(e.touches[0].pageX + e.touches[1].pageX - that.wrapperOffsetLeft * 2) / 2 - that.x;
-			that.originY = m.abs(e.touches[0].pageY + e.touches[1].pageY - that.wrapperOffsetTop * 2) / 2 - that.y;
-
-			if (that.options.onZoomStart) that.options.onZoomStart.call(that, e);
-		}
 
 		if (that.options.momentum) {
 			if (that.options.useTransform) {
@@ -429,8 +441,12 @@ iScroll.prototype = {
 	},
 	
 	_move: function (e) {
-		var that = this,
-			point = hasTouch ? e.touches[0] : e,
+		var that = this;
+        var point = hasTouch? this._find_touch(e.changedTouches, that.touchIndex):e;
+        if(!point)
+            return;
+
+        var
 			deltaX = point.pageX - that.pointX,
 			deltaY = point.pageY - that.pointY,
 			newX = that.x + deltaX,
@@ -441,9 +457,10 @@ iScroll.prototype = {
 		if (that.options.onBeforeScrollMove) that.options.onBeforeScrollMove.call(that, e);
 
 		// Zoom
-		if (that.options.zoom && hasTouch && e.touches.length > 1) {
-			c1 = m.abs(e.touches[0].pageX - e.touches[1].pageX);
-			c2 = m.abs(e.touches[0].pageY - e.touches[1].pageY);
+		if (that.options.zoom && hasTouch && that.otherTouchIndex) {
+            var point2 = this._find_touch(e.touches, that.otherTouchIndex);
+			c1 = m.abs(point.pageX - point2.pageX);
+			c2 = m.abs(point.pageY - point2.pageY);
 			that.touchesDist = m.sqrt(c1*c1+c2*c2);
 
 			that.zoomed = true;
@@ -510,11 +527,13 @@ iScroll.prototype = {
 	},
 	
 	_end: function (e) {
-		if (hasTouch && e.touches.length !== 0) return;
+		var that = this;
 
-		var that = this,
-			point = hasTouch ? e.changedTouches[0] : e,
-			target, ev,
+        var point = hasTouch? e.changedTouches[0]:e;
+        if(point.identifier != that.touchIndex && point.identifier != that.otherTouchIndex)
+            return;
+                         
+        var target, ev,
 			momentumX = { dist:0, time:0 },
 			momentumY = { dist:0, time:0 },
 			duration = (e.timeStamp || Date.now()) - that.startTime,
@@ -525,13 +544,19 @@ iScroll.prototype = {
 			snap,
 			scale;
 
-		that._unbind(MOVE_EV, window);
-		that._unbind(END_EV, window);
-		that._unbind(CANCEL_EV, window);
+        if(!that.zoomed) {
+            that._unbind(MOVE_EV, window);
+            that._unbind(END_EV, window);
+            that._unbind(CANCEL_EV, window);
+        }
 
 		if (that.options.onBeforeScrollEnd) that.options.onBeforeScrollEnd.call(that, e);
 
 		if (that.zoomed) {
+            if(point.identifier == that.touchIndex)
+                that.touchIndex = that.otherTouchIndex;
+            that.otherTouchIndex = null;
+
 			scale = that.scale * that.lastScale;
 			scale = Math.max(that.options.zoomMin, scale);
 			scale = Math.min(that.options.zoomMax, scale);
@@ -550,6 +575,8 @@ iScroll.prototype = {
 			if (that.options.onZoomEnd) that.options.onZoomEnd.call(that, e);
 			return;
 		}
+
+		that.touchIndex = null;
 
 		if (!that.moved) {
 			if (hasTouch) {
@@ -1104,7 +1131,16 @@ iScroll.prototype = {
 	
 	isReady: function () {
 		return !this.moved && !this.zoomed && !this.animating;
-	}
+	},
+
+    _find_touch: function(touchList, identifier) {
+        for(var i = 0; i < touchList.length; ++i) {
+            if(touchList[i].identifier == identifier)
+                return touchList[i];
+        }
+
+        return null;
+    }
 };
 
 function prefixStyle (style) {
