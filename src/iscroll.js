@@ -148,7 +148,7 @@ var m = Math,
 
 			// Events
 			onRefresh: null,
-			onBeforeScrollStart: function (e) { e.preventDefault(); },
+			onBeforeScrollStart: null,
 			onScrollStart: null,
 			onBeforeScrollMove: null,
 			onScrollMove: null,
@@ -232,6 +232,10 @@ iScroll.prototype = {
 			case RESIZE_EV: that._resize(); break;
 			case WHEEL_EV: that._wheel(e); break;
 			case TRNEND_EV: that._transitionEnd(e); break;
+            case "dragstart":
+                this.dragged = true;
+                e.preventDefault();
+                break;
 		}
 	},
 	
@@ -435,9 +439,13 @@ iScroll.prototype = {
 
 		if (that.options.onScrollStart) that.options.onScrollStart.call(that, e);
 
+        // This is set to true if dragstart is received.
+        that.dragged = false;
+
 		that._bind(MOVE_EV, window);
 		that._bind(END_EV, window);
 		that._bind(CANCEL_EV, window);
+		that._bind("dragstart");
 	},
 	
 	_move: function (e) {
@@ -548,6 +556,29 @@ iScroll.prototype = {
             that._unbind(MOVE_EV, window);
             that._unbind(END_EV, window);
             that._unbind(CANCEL_EV, window);
+            that._unbind("dragstart");
+
+            // Work around a strange bug in both Gecko and WebKit.  If dragstart (or mousedown) is
+            // cancelled, the maximum move distance logic for clicks breaks: no matter how far the
+            // mouse moves, if the mouseup is on the same element that mousedown was on it'll cause
+            // a click event.  (Cancelling the drag should only prevent the drag, not change the
+            // click logic.)  Fix this by cancelling the onclick if the user dragged far enough to
+            // trigger dragstart.
+            if(this.dragged) {
+                var stopEvent = function(e) {
+                    e.preventDefault();
+                    if(e.stopImmediatePropagation)
+                        e.stopImmediatePropagation();
+                    else
+                        e.stopPropagation();
+                    window.removeEventListener("click", stopEvent, true);
+                }.bind(this);
+
+                window.addEventListener("click", stopEvent, true);
+                setTimeout(function() {
+                    window.removeEventListener("click", stopEvent, true);
+                }.bind(this), 0);
+            }
         }
 
 		if (that.options.onBeforeScrollEnd) that.options.onBeforeScrollEnd.call(that, e);
@@ -935,6 +966,7 @@ iScroll.prototype = {
 		that._unbind(MOVE_EV, window);
 		that._unbind(END_EV, window);
 		that._unbind(CANCEL_EV, window);
+		that._unbind("dragstart");
 		
 		if (!that.options.hasTouch) {
 			that._unbind(WHEEL_EV);
