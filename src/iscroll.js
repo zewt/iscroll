@@ -227,6 +227,12 @@ iScroll.prototype = {
 				that._start(e);
 				break;
 			case MOVE_EV: that._move(e); break;
+            case "blur":
+                // This is a quick hack to keep us from getting stuck in dragging in Firefox if we lose focus
+                // while dragging; it doesn't fire mouseup events on focus loss.
+                this.disable();
+                this.enable();
+                 break;
 			case END_EV:
 			case CANCEL_EV: that._end(e); break;
 			case RESIZE_EV: that._resize(); break;
@@ -445,6 +451,7 @@ iScroll.prototype = {
 		that._bind(MOVE_EV, window);
 		that._bind(END_EV, window);
 		that._bind(CANCEL_EV, window);
+		that._bind("blur", window);
 		that._bind("dragstart");
 	},
 	
@@ -556,6 +563,7 @@ iScroll.prototype = {
             that._unbind(MOVE_EV, window);
             that._unbind(END_EV, window);
             that._unbind(CANCEL_EV, window);
+            that._unbind("blur", window);
             that._unbind("dragstart");
 
             // Work around a strange bug in both Gecko and WebKit.  If dragstart (or mousedown) is
@@ -966,6 +974,7 @@ iScroll.prototype = {
 		that._unbind(MOVE_EV, window);
 		that._unbind(END_EV, window);
 		that._unbind(CANCEL_EV, window);
+		that._unbind("blur", window);
 		that._unbind("dragstart");
 		
 		if (!that.options.hasTouch) {
